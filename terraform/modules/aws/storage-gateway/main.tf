@@ -1,8 +1,9 @@
 # Create the Storage Gateway
 resource "aws_storagegateway_gateway" "file_gateway" {
-  gateway_name     = "gcp-vm-file-gateway"
-  gateway_timezone = "GMT-5:00" # Adjust to your timezone
-  gateway_type     = "FILE_S3"
+  gateway_name     = var.gateway_name
+  gateway_timezone = var.gateway_timezone
+  gateway_type     = var.gateway_type
+  gateway_ip_address = var.gateway_ip_address
 }
 
 # Create the Storage Gateway File Share

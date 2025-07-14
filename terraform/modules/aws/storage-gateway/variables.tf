@@ -1,6 +1,7 @@
 variable "gateway_name" {}
 variable "gateway_timezone" {}
 variable "gateway_type" {}
+variable "gateway_ip_address" {}
 variable "nfs_shares" {
   type = list(object({
     client_list             = list(string)
