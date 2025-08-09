@@ -4,6 +4,7 @@ resource "aws_storagegateway_gateway" "file_gateway" {
   gateway_timezone = var.gateway_timezone
   gateway_type     = var.gateway_type
   gateway_ip_address = var.gateway_ip_address
+  
 }
 
 # Create the Storage Gateway File Share

@@ -36,7 +36,7 @@ module "source_vm" {
   name                      = "source-vm"
   machine_type              = "e2-micro"
   zone                      = "us-central1-a"
-  metadata_startup_script   = "sudo apt-get update; sudo apt-get install nginx -y"
+  metadata_startup_script   = templatefile("${path.module}/../scripts/user_data.sh")
   deletion_protection       = false
   allow_stopping_for_update = true
   image                     = "ubuntu-os-cloud/ubuntu-2004-focal-v20220712"
