@@ -60,17 +60,17 @@ module "source_vm" {
 module "vpc" {
   source                = "./modules/aws/vpc/vpc"
   vpc_name              = "vpc"
-  vpc_cidr_block        = "10.0.0.0/16"
+  vpc_cidr_block        = "10.2.0.0/16"
   enable_dns_hostnames  = true
   enable_dns_support    = true
   internet_gateway_name = "vpc_igw"
 }
 
 # Security Group
-module "sg" {
+module "gateway_sg" {
   source = "./modules/aws/vpc/security_groups"
   vpc_id = module.vpc.vpc_id
-  name   = "sg"
+  name   = "gateway-sg"
   ingress = [
     {
       from_port       = 80
@@ -107,15 +107,15 @@ module "public_subnets" {
   name   = "public subnet"
   subnets = [
     {
-      subnet = "10.0.1.0/24"
+      subnet = "10.2.1.0/24"
       az     = "${var.aws_region}a"
     },
     {
-      subnet = "10.0.2.0/24"
+      subnet = "10.2.2.0/24"
       az     = "${var.aws_region}b"
     },
     {
-      subnet = "10.0.3.0/24"
+      subnet = "10.2.3.0/24"
       az     = "${var.aws_region}c"
     }
   ]
@@ -129,15 +129,15 @@ module "private_subnets" {
   name   = "private subnet"
   subnets = [
     {
-      subnet = "10.0.6.0/24"
+      subnet = "10.2.4.0/24"
       az     = "${var.aws_region}a"
     },
     {
-      subnet = "10.0.5.0/24"
+      subnet = "10.2.5.0/24"
       az     = "${var.aws_region}b"
     },
     {
-      subnet = "10.0.4.0/24"
+      subnet = "10.2.6.0/24"
       az     = "${var.aws_region}c"
     }
   ]
@@ -167,6 +167,20 @@ module "private_rt" {
   subnets = module.private_subnets.subnets[*]
   routes  = []
   vpc_id  = module.vpc.vpc_id
+}
+
+# Gateway Instance
+resource "aws_instance" "gateway_instance" {
+  ami                         = "ami-005fc0f236362e99f"
+  instance_type               = "t2.micro"
+  subnet_id                   = module.public_subnets.subnets[0].id
+  vpc_security_group_ids      = [module.gateway_sg.id]
+  associate_public_ip_address = true
+  tags = {
+    Name = "aws-vm"
+  }
+
+  key_name = "madmaxkeypair"
 }
 
 # Create an IAM role for Storage Gateway
@@ -214,18 +228,18 @@ module "s3_bucket" {
 module "storage_gateway" {
   source             = "./modules/aws/storage-gateway"
   gateway_name       = "gcp-vm-file-gateway"
-  gateway_timezone   = "GMT-5:00"
+  gateway_timezone   = "GMT"
   gateway_type       = "FILE_S3"
-  gateway_ip_address = google_compute_address.source_vm_ip.address
-  nfs_shares = [
+  gateway_ip_address = aws_instance.gateway_instance.public_ip
+  smb_shares = [
     {
-      client_list             = ["0.0.0.0/0"]
       location_arn            = "${module.s3_bucket.arn}"
       role_arn                = "${aws_iam_role.storage_gateway_role.arn}"
-      default_storage_class   = "S3_STANDARD"
+      authentication          = "GuestAccess"
       guess_mime_type_enabled = true
-      requester_pays          = false
-      squash                  = "RootSquash"
+      read_only               = false
+      valid_user_list         = ["*"]
+      smb_acl_enabled         = true
     }
   ]
 }

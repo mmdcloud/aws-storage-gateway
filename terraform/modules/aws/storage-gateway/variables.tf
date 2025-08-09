@@ -12,4 +12,17 @@ variable "nfs_shares" {
     requester_pays          = string
     squash                  = string
   }))
+  default = []
+}
+
+variable "smb_shares" {
+  type = list(object({
+    location_arn            = string
+    role_arn                = string
+    authentication          = string
+    guess_mime_type_enabled = bool
+    read_only               = bool
+    valid_user_list         = list(string)
+    smb_acl_enabled         = bool
+  }))
 }
