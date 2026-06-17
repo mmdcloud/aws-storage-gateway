@@ -1,9 +1,8 @@
 # -----------------------------------------------------------------------------------------
 # GCP Configuration
 # -----------------------------------------------------------------------------------------
-
-# Source VPC 
-module "source_vpc" {
+# On-Prem VPC (Simulated) 
+module "gcp_vpc" {
   source                          = "./modules/gcp/vpc"
   vpc_name                        = "source-vpc"
   delete_default_routes_on_create = false
@@ -30,7 +29,7 @@ resource "google_compute_address" "source_vm_ip" {
   name = "source-vm-address"
 }
 
-# Instance 1
+# Instance
 module "source_vm" {
   source                    = "./modules/gcp/compute"
   name                      = "source-vm"
@@ -56,14 +55,24 @@ module "source_vm" {
 # -----------------------------------------------------------------------------------------
 # AWS Configuration
 # -----------------------------------------------------------------------------------------
-
 module "vpc" {
-  source                = "./modules/aws/vpc/vpc"
-  vpc_name              = "vpc"
-  vpc_cidr_block        = "10.2.0.0/16"
-  enable_dns_hostnames  = true
-  enable_dns_support    = true
-  internet_gateway_name = "vpc_igw"
+  source                  = "../../../modules/vpc"
+  vpc_name                = "vpc"
+  vpc_cidr                = "10.0.0.0/16"
+  azs                     = var.azs
+  public_subnets          = var.public_subnets
+  private_subnets         = var.private_subnets
+  database_subnets        = var.database_subnets
+  enable_dns_hostnames    = true
+  enable_dns_support      = true
+  create_igw              = true
+  map_public_ip_on_launch = true
+  enable_nat_gateway      = true
+  single_nat_gateway      = false
+  one_nat_gateway_per_az  = true
+  tags = {
+    Name = "vpc"
+  }
 }
 
 # Security Group
@@ -99,74 +108,6 @@ module "gateway_sg" {
       cidr_blocks = ["0.0.0.0/0"]
     }
   ]
-}
-
-# Public Subnets
-module "public_subnets" {
-  source = "./modules/aws/vpc/subnets"
-  name   = "public subnet"
-  subnets = [
-    {
-      subnet = "10.2.1.0/24"
-      az     = "${var.aws_region}a"
-    },
-    {
-      subnet = "10.2.2.0/24"
-      az     = "${var.aws_region}b"
-    },
-    {
-      subnet = "10.2.3.0/24"
-      az     = "${var.aws_region}c"
-    }
-  ]
-  vpc_id                  = module.vpc.vpc_id
-  map_public_ip_on_launch = true
-}
-
-# Private Subnets
-module "private_subnets" {
-  source = "./modules/aws/vpc/subnets"
-  name   = "private subnet"
-  subnets = [
-    {
-      subnet = "10.2.4.0/24"
-      az     = "${var.aws_region}a"
-    },
-    {
-      subnet = "10.2.5.0/24"
-      az     = "${var.aws_region}b"
-    },
-    {
-      subnet = "10.2.6.0/24"
-      az     = "${var.aws_region}c"
-    }
-  ]
-  vpc_id                  = module.vpc.vpc_id
-  map_public_ip_on_launch = false
-}
-
-# Public Route Table
-module "public_rt" {
-  source  = "./modules/aws/vpc/route_tables"
-  name    = "public route table"
-  subnets = module.public_subnets.subnets[*]
-  routes = [
-    {
-      cidr_block     = "0.0.0.0/0"
-      gateway_id     = module.vpc.igw_id
-      nat_gateway_id = ""
-    }
-  ]
-  vpc_id = module.vpc.vpc_id
-}
-
-# Private Route Table
-module "private_rt" {
-  source  = "./modules/aws/vpc/route_tables"
-  name    = "private route table"
-  subnets = module.private_subnets.subnets[*]
-  routes  = []
-  vpc_id  = module.vpc.vpc_id
 }
 
 # Gateway Instance
