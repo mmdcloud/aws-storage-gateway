@@ -111,17 +111,16 @@ module "gateway_sg" {
 }
 
 # Gateway Instance
-resource "aws_instance" "gateway_instance" {
-  ami                         = "ami-005fc0f236362e99f"
+module "efs_mount_instance" {
+  source                      = "./modules/ec2"
+  name                        = "gateway-instance"
+  ami_id                      = data.aws_ami.ubuntu.id
   instance_type               = "t2.micro"
-  subnet_id                   = module.public_subnets.subnets[0].id
-  vpc_security_group_ids      = [module.gateway_sg.id]
+  key_name                    = "madmaxkeypair"
   associate_public_ip_address = true
-  tags = {
-    Name = "aws-vm"
-  }
-
-  key_name = "madmaxkeypair"
+  instance_profile = aws_iam_instance_profile.iam_instance_profile.name
+  subnet_id        = module.public_subnets.subnets[0].id
+  security_groups  = [module.gateway_sg.id]
 }
 
 # Create an IAM role for Storage Gateway
@@ -171,7 +170,7 @@ module "storage_gateway" {
   gateway_name       = "gcp-vm-file-gateway"
   gateway_timezone   = "GMT"
   gateway_type       = "FILE_S3"
-  gateway_ip_address = aws_instance.gateway_instance.public_ip
+  gateway_ip_address = module.gateway_instance.public_ip
   smb_shares = [
     {
       location_arn            = "${module.s3_bucket.arn}"
