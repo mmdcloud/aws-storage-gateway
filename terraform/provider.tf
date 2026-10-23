@@ -13,10 +13,11 @@ terraform {
 
 # Configure the AWS Provider
 provider "aws" {
-  region = "us-east-1"
+  region = var.aws_region
 }
 
+# Configure the Google Cloud Provider
 provider "google" {
-  region  = "us-central1"
-  project = "encoded-alpha-457108-e8"
+  region  = var.gcp_region
+  project = var.gcp_project
 }
