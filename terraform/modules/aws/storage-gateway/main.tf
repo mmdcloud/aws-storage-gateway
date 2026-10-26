@@ -1,10 +1,19 @@
 # Create the Storage Gateway
 resource "aws_storagegateway_gateway" "file_gateway" {
-  gateway_name       = var.gateway_name
-  gateway_timezone   = var.gateway_timezone
-  gateway_type       = var.gateway_type
-  gateway_ip_address = var.gateway_ip_address
-  smb_guest_password = var.smb_guest_password
+  gateway_name         = var.gateway_name
+  gateway_timezone     = var.gateway_timezone
+  gateway_type         = var.gateway_type
+  gateway_ip_address   = var.gateway_ip_address
+  gateway_vpc_endpoint = var.gateway_vpc_endpoint
+  smb_guest_password   = var.smb_guest_password
+}
+
+# Delay to allow Storage Gateway to discover newly attached EBS cache volumes
+resource "time_sleep" "wait_for_cache_disk" {
+  count           = var.cache_disk_node != null || var.cache_disk_path != null ? 1 : 0
+  create_duration = "30s"
+
+  depends_on = [aws_storagegateway_gateway.file_gateway]
 }
 
 # Local disk data source for cache (queries either disk_node or disk_path)
@@ -14,7 +23,7 @@ data "aws_storagegateway_local_disk" "cache" {
   disk_node   = var.cache_disk_node
   disk_path   = var.cache_disk_path
 
-  depends_on = [aws_storagegateway_gateway.file_gateway]
+  depends_on = [time_sleep.wait_for_cache_disk]
 }
 
 # Configure the cache

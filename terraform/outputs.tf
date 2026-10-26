@@ -1,6 +1,11 @@
 output "gateway_ip_address" {
-  description = "Public IP address of the Storage Gateway instance"
-  value       = module.storage_gateway.gateway_ip_address
+  description = "Private IP address of the Storage Gateway EC2 instance"
+  value       = module.gateway_instance.private_ip
+}
+
+output "gateway_private_ip" {
+  description = "Private IP address of the Storage Gateway EC2 instance"
+  value       = module.gateway_instance.private_ip
 }
 
 output "gateway_id" {
@@ -11,6 +16,11 @@ output "gateway_id" {
 output "gateway_arn" {
   description = "AWS Storage Gateway ARN"
   value       = module.storage_gateway.arn
+}
+
+output "storagegateway_vpc_endpoint_dns" {
+  description = "DNS name of the AWS Storage Gateway Interface VPC Endpoint"
+  value       = aws_vpc_endpoint.storagegateway.dns_entry[0].dns_name
 }
 
 output "source_vm_public_ip" {
@@ -29,7 +39,15 @@ output "smb_share_arns" {
 }
 
 output "smb_mount_command" {
-  description = "Sample command to run on the GCP simulated on-premise VM to mount the SMB file share"
-  value       = "sudo /home/admin/mount-aws-storage-gateway.sh ${module.gateway_instance.public_ip} ${module.s3_bucket.bucket} ${var.smb_guest_password}"
+  description = "Command to run on the GCP simulated on-premise VM to mount the SMB file share privately over VPN"
+  value       = "sudo /home/admin/mount-aws-storage-gateway.sh ${module.gateway_instance.private_ip} ${module.s3_bucket.bucket} ${var.smb_guest_password}"
   sensitive   = true
+}
+
+output "vpn_connection_ids" {
+  description = "AWS VPN Connection IDs connecting AWS VGW to GCP Cloud Router"
+  value = [
+    aws_vpn_connection.vpn_conn_0.id,
+    aws_vpn_connection.vpn_conn_1.id
+  ]
 }

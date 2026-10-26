@@ -18,6 +18,12 @@ variable "gateway_ip_address" {
   description = "IP address of the gateway EC2 instance"
 }
 
+variable "gateway_vpc_endpoint" {
+  type        = string
+  description = "The VPC endpoint address that the gateway will connect to"
+  default     = null
+}
+
 variable "smb_guest_password" {
   type        = string
   description = "Guest password for SMB file shares"
