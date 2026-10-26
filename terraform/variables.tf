@@ -67,3 +67,9 @@ variable "smb_guest_password" {
   default     = "GuestPass123!"
   sensitive   = true
 }
+
+variable "activation_key" {
+  type        = string
+  description = "AWS Storage Gateway activation key (optional; if omitted, automatically retrieved across the HA VPN from the on-premise GCP VM)"
+  default     = null
+}

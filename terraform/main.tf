@@ -533,6 +533,36 @@ module "s3_bucket" {
   force_destroy      = true
 }
 
+# Automatically retrieve Storage Gateway activation key across the HA VPN from GCP source-vm
+data "external" "activation_key" {
+  count   = var.activation_key == null ? 1 : 0
+  program = ["python3", "${path.module}/scripts/get_activation_key.py"]
+
+  query = {
+    gateway_ip   = module.gateway_instance.private_ip
+    region       = var.aws_region
+    vpc_endpoint = aws_vpc_endpoint.storagegateway.dns_entry[0].dns_name
+    vm_name      = "source-vm"
+    zone         = "${var.gcp_region}-a"
+    project      = var.gcp_project
+  }
+
+  depends_on = [
+    module.source_vm,
+    module.gateway_instance,
+    aws_vpn_connection.vpn_conn_0,
+    aws_vpn_connection.vpn_conn_1,
+    google_compute_router_peer.bgp_peer,
+    aws_vpc_endpoint.storagegateway
+  ]
+}
+
+locals {
+  gateway_activation_key = var.activation_key != null ? var.activation_key : (
+    length(data.external.activation_key) > 0 ? data.external.activation_key[0].result["activation_key"] : null
+  )
+}
+
 # Storage Gateway & SMB File Share (Configured with Private IP & Private VPC Endpoint)
 module "storage_gateway" {
   source               = "./modules/aws/storage-gateway"
@@ -541,6 +571,7 @@ module "storage_gateway" {
   gateway_type         = "FILE_S3"
   gateway_ip_address   = module.gateway_instance.private_ip
   gateway_vpc_endpoint = aws_vpc_endpoint.storagegateway.dns_entry[0].dns_name
+  activation_key       = local.gateway_activation_key
   smb_guest_password   = var.smb_guest_password
   cache_disk_node      = aws_volume_attachment.gateway_cache_attachment.device_name
   smb_shares = [

@@ -3,9 +3,16 @@ resource "aws_storagegateway_gateway" "file_gateway" {
   gateway_name         = var.gateway_name
   gateway_timezone     = var.gateway_timezone
   gateway_type         = var.gateway_type
-  gateway_ip_address   = var.gateway_ip_address
+  gateway_ip_address   = var.activation_key == null ? var.gateway_ip_address : null
   gateway_vpc_endpoint = var.gateway_vpc_endpoint
+  activation_key       = var.activation_key
   smb_guest_password   = var.smb_guest_password
+
+  lifecycle {
+    ignore_changes = [
+      activation_key
+    ]
+  }
 }
 
 # Delay to allow Storage Gateway to discover newly attached EBS cache volumes

@@ -24,6 +24,12 @@ variable "gateway_vpc_endpoint" {
   default     = null
 }
 
+variable "activation_key" {
+  type        = string
+  description = "The activation key for the gateway (bypasses HTTP query to gateway_ip_address for private subnets)"
+  default     = null
+}
+
 variable "smb_guest_password" {
   type        = string
   description = "Guest password for SMB file shares"
