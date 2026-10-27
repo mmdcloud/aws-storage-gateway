@@ -166,8 +166,6 @@ resource "aws_vpn_connection" "vpn_conn_1" {
   tags = {
     Name = "aws-to-gcp-conn-1"
   }
-
-  depends_on = [aws_vpn_connection.vpn_conn_0]
 }
 
 # -----------------------------------------------------------------------------
@@ -342,6 +340,15 @@ resource "aws_vpc_endpoint" "storagegateway" {
   tags = {
     Name = "storagegateway-interface-endpoint"
   }
+}
+
+# Non-zonal DNS name of the Storage Gateway VPC endpoint (dns_entry order is not guaranteed,
+# and the zonal names like vpce-xxx-us-east-1a.* are not valid for activation).
+locals {
+  sgw_vpce_dns = [
+    for e in aws_vpc_endpoint.storagegateway.dns_entry : e.dns_name
+    if !can(regex("-${var.aws_region}[a-z]\\.", e.dns_name))
+  ][0]
 }
 
 # Gateway VPC Endpoint for Amazon S3
@@ -541,7 +548,7 @@ data "external" "activation_key" {
   query = {
     gateway_ip   = module.gateway_instance.private_ip
     region       = var.aws_region
-    vpc_endpoint = aws_vpc_endpoint.storagegateway.dns_entry[0].dns_name
+    vpc_endpoint = local.sgw_vpce_dns
     vm_name      = "source-vm"
     zone         = "${var.gcp_region}-a"
     project      = var.gcp_project
@@ -570,7 +577,7 @@ module "storage_gateway" {
   gateway_timezone     = "GMT"
   gateway_type         = "FILE_S3"
   gateway_ip_address   = module.gateway_instance.private_ip
-  gateway_vpc_endpoint = aws_vpc_endpoint.storagegateway.dns_entry[0].dns_name
+  gateway_vpc_endpoint = local.sgw_vpce_dns
   activation_key       = local.gateway_activation_key
   smb_guest_password   = var.smb_guest_password
   cache_disk_node      = aws_volume_attachment.gateway_cache_attachment.device_name

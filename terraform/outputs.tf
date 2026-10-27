@@ -20,7 +20,7 @@ output "gateway_arn" {
 
 output "storagegateway_vpc_endpoint_dns" {
   description = "DNS name of the AWS Storage Gateway Interface VPC Endpoint"
-  value       = aws_vpc_endpoint.storagegateway.dns_entry[0].dns_name
+  value       = local.sgw_vpce_dns
 }
 
 output "source_vm_public_ip" {

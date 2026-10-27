@@ -4,7 +4,7 @@ resource "aws_storagegateway_gateway" "file_gateway" {
   gateway_timezone     = var.gateway_timezone
   gateway_type         = var.gateway_type
   gateway_ip_address   = var.activation_key == null ? var.gateway_ip_address : null
-  gateway_vpc_endpoint = var.gateway_vpc_endpoint
+  gateway_vpc_endpoint = var.activation_key == null ? var.gateway_vpc_endpoint : null
   activation_key       = var.activation_key
   smb_guest_password   = var.smb_guest_password
 
