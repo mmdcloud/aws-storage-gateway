@@ -58,3 +58,9 @@ variable "smb_shares" {
   type    = any
   default = []
 }
+
+variable "tags" {
+  type        = map(string)
+  description = "Tags to assign to the Storage Gateway"
+  default     = {}
+}

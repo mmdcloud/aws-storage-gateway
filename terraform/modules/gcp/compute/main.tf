@@ -2,6 +2,7 @@ resource "google_compute_instance" "instance" {
   name         = var.name
   machine_type = var.machine_type
   zone         = var.zone
+  labels       = var.labels
   dynamic "network_interface" {
     for_each = var.network_interfaces
     content {

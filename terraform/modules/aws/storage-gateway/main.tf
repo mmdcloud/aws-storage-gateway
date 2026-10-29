@@ -7,6 +7,7 @@ resource "aws_storagegateway_gateway" "file_gateway" {
   gateway_vpc_endpoint = var.activation_key == null ? var.gateway_vpc_endpoint : null
   activation_key       = var.activation_key
   smb_guest_password   = var.smb_guest_password
+  tags                 = var.tags
 
   lifecycle {
     ignore_changes = [
@@ -66,6 +67,11 @@ resource "aws_storagegateway_smb_file_share" "smb_share" {
   read_only               = lookup(var.smb_shares[count.index], "read_only", false)
   valid_user_list         = lookup(var.smb_shares[count.index], "valid_user_list", null)
   smb_acl_enabled         = lookup(var.smb_shares[count.index], "smb_acl_enabled", null)
+  file_share_name         = lookup(var.smb_shares[count.index], "file_share_name", null)
+  case_sensitivity        = lookup(var.smb_shares[count.index], "case_sensitivity", null)
+  admin_user_list         = lookup(var.smb_shares[count.index], "admin_user_list", null)
+  invalid_user_list       = lookup(var.smb_shares[count.index], "invalid_user_list", null)
+  tags                    = lookup(var.smb_shares[count.index], "tags", var.tags)
 
   depends_on = [aws_storagegateway_cache.file_gateway_cache]
 }

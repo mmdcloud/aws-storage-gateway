@@ -14,3 +14,9 @@ variable "network_interfaces" {
     }))
   }))
 }
+
+variable "labels" {
+  type        = map(string)
+  description = "Key/value labels to attach to instance"
+  default     = {}
+}

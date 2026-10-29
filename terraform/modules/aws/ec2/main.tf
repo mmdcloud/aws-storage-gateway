@@ -9,7 +9,10 @@ resource "aws_instance" "instance" {
   vpc_security_group_ids      = var.security_groups
   iam_instance_profile        = var.instance_profile
 
-  tags = {
-    Name = var.name
-  }
+  tags = merge(
+    {
+      Name = var.name
+    },
+    var.tags
+  )
 }

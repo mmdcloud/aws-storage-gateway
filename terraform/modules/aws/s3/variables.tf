@@ -21,6 +21,11 @@ variable "bucket_policy" {
   type    = string
   default = ""
 }
+variable "tags" {
+  type        = map(string)
+  description = "Tags to assign to the bucket"
+  default     = {}
+}
 variable "bucket_notification" {
   type = object({
     queue = list(object({
