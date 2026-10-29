@@ -39,6 +39,7 @@ def main():
     vm = d.get("vm_name", "source-vm")
     zone = d.get("zone", "us-central1-a")
     project = d.get("project", "")
+    gateway_name = d.get("gateway_name", "gcp-vm-file-gateway")
 
     # 1. Fast-path: Check if the gateway is already active in AWS Storage Gateway
     # If the gateway is already active, port 80 will no longer serve an activation key.
@@ -49,8 +50,8 @@ def main():
         if sgw_res.returncode == 0:
             data = json.loads(sgw_res.stdout)
             for gw in data.get("Gateways", []):
-                if gw.get("GatewayName") == "gcp-vm-file-gateway" and gw.get("GatewayOperationalState") == "ACTIVE":
-                    log("Storage Gateway 'gcp-vm-file-gateway' is already ACTIVE. Bypassing activation key lookup.")
+                if gw.get("GatewayName") == gateway_name and gw.get("GatewayOperationalState") == "ACTIVE":
+                    log(f"Storage Gateway '{gateway_name}' is already ACTIVE. Bypassing activation key lookup.")
                     print(json.dumps({"activation_key": "ALREADY_ACTIVATED"}))
                     return
     except Exception as e:

@@ -626,11 +626,11 @@ resource "aws_iam_role_policy_attachment" "storage_gateway_policy" {
 
 # S3 Bucket backed by Storage Gateway
 module "s3_bucket" {
-  source             = "./modules/aws/s3"
-  bucket_name        = var.s3_bucket_name
-  objects            = []
-  bucket_policy      = ""
-  cors               = [
+  source        = "./modules/aws/s3"
+  bucket_name   = var.s3_bucket_name
+  objects       = []
+  bucket_policy = ""
+  cors = [
     {
       allowed_headers = ["*"]
       allowed_methods = ["GET"]
@@ -655,6 +655,7 @@ data "external" "activation_key" {
     vm_name      = var.gcp_vm_name
     zone         = local.gcp_zone
     project      = var.gcp_project
+    gateway_name = var.gateway_name
   }
 
   depends_on = [
