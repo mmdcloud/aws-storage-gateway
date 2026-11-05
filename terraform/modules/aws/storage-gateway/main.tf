@@ -19,7 +19,7 @@ resource "aws_storagegateway_gateway" "file_gateway" {
 # Delay to allow Storage Gateway to discover newly attached EBS cache volumes
 resource "time_sleep" "wait_for_cache_disk" {
   count           = var.cache_disk_node != null || var.cache_disk_path != null ? 1 : 0
-  create_duration = "30s"
+  create_duration = "60s"
 
   depends_on = [aws_storagegateway_gateway.file_gateway]
 }

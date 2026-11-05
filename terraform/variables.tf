@@ -179,13 +179,13 @@ variable "database_subnets" {
 variable "enable_nat_gateway" {
   type        = bool
   description = "Enable NAT Gateway for private subnets (needed if outbound internet is required)"
-  default     = true
+  default     = false
 }
 
 variable "single_nat_gateway" {
   type        = bool
   description = "Use a single NAT Gateway across all AZs to optimize cost (set to false with one_nat_gateway_per_az for multi-AZ HA)"
-  default     = true
+  default     = false
 }
 
 variable "one_nat_gateway_per_az" {
@@ -280,6 +280,17 @@ variable "gateway_instance_type" {
   type        = string
   description = "EC2 instance type for Storage Gateway (minimum m5.xlarge or m4.xlarge recommended by AWS)"
   default     = "m5.xlarge"
+}
+
+variable "gateway_private_ip" {
+  type        = string
+  description = "Static private IP address for the Storage Gateway EC2 instance (must be inside private_subnets[0])"
+  default     = "10.0.4.150"
+
+  validation {
+    condition     = var.gateway_private_ip == null ? true : can(cidrhost("${var.gateway_private_ip}/32", 0))
+    error_message = "gateway_private_ip must be a valid IPv4 address."
+  }
 }
 
 variable "key_name" {
@@ -379,7 +390,7 @@ variable "s3_bucket_name" {
 variable "s3_force_destroy" {
   type        = bool
   description = "Allow bucket deletion when objects are present (keep false in production to prevent data loss)"
-  default     = false
+  default     = true
 }
 
 variable "s3_versioning_enabled" {

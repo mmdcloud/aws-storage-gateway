@@ -59,6 +59,7 @@ gateway_instance_name = "gateway-instance"
 gateway_timezone      = "GMT"
 gateway_type          = "FILE_S3"
 gateway_instance_type = "m5.xlarge" # Minimum 4 vCPUs / 16 GiB RAM recommended
+gateway_private_ip    = "10.0.4.150" # Static private IP inside private_subnets[0] (10.0.4.0/24)
 key_name              = null
 
 # EBS Local Cache (Minimum 150 GiB required by AWS)

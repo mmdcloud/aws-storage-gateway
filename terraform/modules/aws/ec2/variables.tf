@@ -25,6 +25,12 @@ variable "associate_public_ip_address" {
   default     = true
 }
 
+variable "private_ip" {
+  type        = string
+  description = "Private IP address to associate with the instance in the subnet"
+  default     = null
+}
+
 variable "user_data" {
   type        = string
   description = "User data script"
