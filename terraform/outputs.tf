@@ -71,10 +71,6 @@ output "source_vm_name" {
   value       = var.gcp_vm_name
 }
 
-output "source_vm_public_ip" {
-  description = "Public IP address of the GCP simulated on-premise VM for SSH management"
-  value       = google_compute_address.source_vm_ip.address
-}
 
 # --- Cross-Cloud HA VPN & BGP Network Details ---
 
