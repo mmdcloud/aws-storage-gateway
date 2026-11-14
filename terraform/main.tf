@@ -1,7 +1,6 @@
 # =============================================================================
 # Production-Grade AWS Storage Gateway over HA VPN with VPC Endpoints
 # =============================================================================
-
 locals {
   name_prefix = "${var.project_name}-${var.environment}"
   gcp_zone    = var.gcp_zone != null ? var.gcp_zone : "${var.gcp_region}-a"
@@ -326,49 +325,50 @@ module "vpc" {
 }
 
 # Security Group for Storage Gateway Interface VPC Endpoint
-resource "aws_security_group" "storagegateway_vpce" {
+module "storagegateway_vpce_sg" {
+  source      = "./modules/aws/vpc/security_groups"
+  vpc_id      = module.vpc.vpc_id
   name        = var.vpce_sg_name
   description = "Security group for AWS Storage Gateway Interface VPC Endpoint"
-  vpc_id      = module.vpc.vpc_id
-
-  ingress {
-    description = "HTTPS traffic for Storage Gateway activation and management"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = concat([var.aws_vpc_cidr], var.source_vpc_ip_cidr_range)
-  }
-
-  ingress {
-    description = "Storage Gateway service communication ports 1026-1031"
-    from_port   = 1026
-    to_port     = 1031
-    protocol    = "tcp"
-    cidr_blocks = [var.aws_vpc_cidr]
-  }
-
-  ingress {
-    description = "Storage Gateway service communication port 2222"
-    from_port   = 2222
-    to_port     = 2222
-    protocol    = "tcp"
-    cidr_blocks = [var.aws_vpc_cidr]
-  }
-
-  egress {
-    description = "Allow all outbound traffic"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = merge(
-    local.common_tags,
+  tags        = local.common_tags
+  ingress = [
     {
-      Name = var.vpce_sg_name
+      from_port       = 443
+      to_port         = 443
+      protocol        = "tcp"
+      self            = "false"
+      cidr_blocks     = concat([var.aws_vpc_cidr], var.source_vpc_ip_cidr_range)
+      security_groups = []
+      description     = "HTTPS traffic for Storage Gateway activation and management"
+    },
+    {
+      from_port       = 1026
+      to_port         = 1031
+      protocol        = "tcp"
+      self            = "false"
+      cidr_blocks     = [var.aws_vpc_cidr]
+      security_groups = []
+      description     = "Storage Gateway service communication ports 1026-1031"
+    },
+    {
+      from_port       = 2222
+      to_port         = 2222
+      protocol        = "tcp"
+      self            = "false"
+      cidr_blocks     = [var.aws_vpc_cidr]
+      security_groups = []
+      description     = "Storage Gateway service communication port 2222"
     }
-  )
+  ]
+  egress = [
+    {
+      from_port   = 0
+      to_port     = 0
+      protocol    = "-1"
+      cidr_blocks = ["0.0.0.0/0"]
+      description = "Allow all outbound traffic"
+    }
+  ]
 }
 
 # Interface VPC Endpoint for AWS Storage Gateway (PrivateLink Control Plane)
@@ -377,7 +377,7 @@ resource "aws_vpc_endpoint" "storagegateway" {
   service_name        = "com.amazonaws.${var.aws_region}.storagegateway"
   vpc_endpoint_type   = "Interface"
   subnet_ids          = module.vpc.private_subnets
-  security_group_ids  = [aws_security_group.storagegateway_vpce.id]
+  security_group_ids  = [module.storagegateway_vpce_sg.id]
   private_dns_enabled = true
 
   tags = merge(
