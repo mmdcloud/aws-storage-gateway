@@ -44,8 +44,6 @@ locals {
 # =============================================================================
 # GCP Configuration (Simulated On-Premise Environment)
 # =============================================================================
-
-# On-Prem VPC Network (Simulated)
 module "gcp_vpc" {
   source                          = "./modules/gcp/vpc"
   vpc_name                        = var.gcp_vpc_name
@@ -266,12 +264,6 @@ resource "google_compute_router_peer" "bgp_peer" {
   advertised_route_priority = var.bgp_advertised_route_priority
 }
 
-# Static Public IP for GCP Client VM
-# resource "google_compute_address" "source_vm_ip" {
-#   name   = var.gcp_vm_ip_name
-#   region = var.gcp_region
-# }
-
 # Simulated On-Premise Client VM (running Samba & SMB client tools)
 module "source_vm" {
   source                    = "./modules/gcp/compute"
@@ -285,13 +277,9 @@ module "source_vm" {
   labels                    = var.gcp_labels
   network_interfaces = [
     {
-      network    = module.gcp_vpc.vpc_id
-      subnetwork = module.gcp_vpc.subnets[0].id
-      access_configs = [
-        # {
-        #   nat_ip = google_compute_address.source_vm_ip.address
-        # }
-      ]
+      network        = module.gcp_vpc.vpc_id
+      subnetwork     = module.gcp_vpc.subnets[0].id
+      access_configs = []
     }
   ]
 }
@@ -299,8 +287,6 @@ module "source_vm" {
 # =============================================================================
 # AWS Configuration (VPC, Storage Gateway, VPC Endpoints & S3)
 # =============================================================================
-
-# AWS VPC
 module "vpc" {
   source                  = "./modules/aws/vpc"
   vpc_name                = var.aws_vpc_name
@@ -372,43 +358,35 @@ module "storagegateway_vpce_sg" {
 }
 
 # Interface VPC Endpoint for AWS Storage Gateway (PrivateLink Control Plane)
-resource "aws_vpc_endpoint" "storagegateway" {
+module "storagegateway_vpce" {
+  source              = "./modules/aws/vpc_endpoint"
+  name                = "storagegateway-interface-endpoint"
   vpc_id              = module.vpc.vpc_id
   service_name        = "com.amazonaws.${var.aws_region}.storagegateway"
   vpc_endpoint_type   = "Interface"
   subnet_ids          = module.vpc.private_subnets
   security_group_ids  = [module.storagegateway_vpce_sg.id]
   private_dns_enabled = true
-
-  tags = merge(
-    local.common_tags,
-    {
-      Name = "storagegateway-interface-endpoint"
-    }
-  )
+  tags                = local.common_tags
 }
 
 # Extract regional non-zonal DNS name of the Storage Gateway VPC Endpoint
 locals {
   sgw_vpce_dns = [
-    for e in aws_vpc_endpoint.storagegateway.dns_entry : e.dns_name
+    for e in module.storagegateway_vpce.dns_entry : e.dns_name
     if !can(regex("-${var.aws_region}[a-z]\\.", e.dns_name))
   ][0]
 }
 
 # Gateway VPC Endpoint for Amazon S3 (Private Data Plane Route)
-resource "aws_vpc_endpoint" "s3" {
+module "s3_vpce" {
+  source            = "./modules/aws/vpc_endpoint"
+  name              = "s3-gateway-endpoint"
   vpc_id            = module.vpc.vpc_id
   service_name      = "com.amazonaws.${var.aws_region}.s3"
   vpc_endpoint_type = "Gateway"
   route_table_ids   = module.vpc.private_route_table_ids
-
-  tags = merge(
-    local.common_tags,
-    {
-      Name = "s3-gateway-endpoint"
-    }
-  )
+  tags              = local.common_tags
 }
 
 # Security Group for Storage Gateway EC2 Host
@@ -454,15 +432,6 @@ module "gateway_sg" {
       security_groups = []
       description     = "NetBIOS session service for SMB"
     },
-    # {
-    #   from_port       = 22
-    #   to_port         = 22
-    #   protocol        = "tcp"
-    #   self            = "false"
-    #   cidr_blocks     = concat([var.aws_vpc_cidr], var.source_vpc_ip_cidr_range)
-    #   security_groups = []
-    #   description     = "SSH access for gateway administration"
-    # },
     {
       from_port       = -1
       to_port         = -1
@@ -489,9 +458,13 @@ data "aws_ssm_parameter" "storage_gateway_ami" {
 }
 
 # IAM Role & Instance Profile for EC2 Gateway Host
-resource "aws_iam_role" "gateway_instance_role" {
-  name = var.gateway_instance_role_name
-
+module "gateway_instance_role" {
+  source             = "./modules/aws/iam"
+  role_name          = var.gateway_instance_role_name
+  role_description   = ""
+  policy_name        = ""
+  policy_description = ""
+  policy             = ""
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -509,13 +482,13 @@ resource "aws_iam_role" "gateway_instance_role" {
 }
 
 resource "aws_iam_role_policy_attachment" "gateway_instance_ssm" {
-  role       = aws_iam_role.gateway_instance_role.name
+  role       = module.gateway_instance_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
 resource "aws_iam_instance_profile" "iam_instance_profile" {
   name = var.gateway_instance_profile_name
-  role = aws_iam_role.gateway_instance_role.name
+  role = module.gateway_instance_role.name
 }
 
 # Storage Gateway EC2 Host Instance (Deployed in Private Subnet, no public IP)
@@ -575,9 +548,13 @@ resource "aws_volume_attachment" "gateway_cache_attachment" {
 }
 
 # IAM Role for Storage Gateway Service to access S3
-resource "aws_iam_role" "storage_gateway_role" {
-  name = var.storage_gateway_role_name
-
+module "storage_gateway_role" {
+  source           = "./modules/aws/iam"
+  role_name        = var.storage_gateway_role_name
+  role_description = ""
+  policy_name = ""
+  policy_description = ""
+  policy = ""
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -607,7 +584,7 @@ data "aws_iam_policy_document" "storage_gateway_s3_least_privilege" {
       "s3:ListBucketVersions",
       "s3:ListBucketMultipartUploads"
     ]
-    resources = [module.s3_bucket.arn]
+    resources = [module.smb_share_bucket.arn]
   }
 
   statement {
@@ -624,7 +601,7 @@ data "aws_iam_policy_document" "storage_gateway_s3_least_privilege" {
       "s3:PutObject",
       "s3:PutObjectAcl"
     ]
-    resources = ["${module.s3_bucket.arn}/*"]
+    resources = ["${module.smb_share_bucket.arn}/*"]
   }
 }
 
@@ -637,12 +614,12 @@ resource "aws_iam_policy" "storage_gateway_s3_policy" {
 }
 
 resource "aws_iam_role_policy_attachment" "storage_gateway_policy" {
-  role       = aws_iam_role.storage_gateway_role.name
+  role       = module.storage_gateway_role.name
   policy_arn = var.enable_least_privilege_iam ? aws_iam_policy.storage_gateway_s3_policy[0].arn : "arn:aws:iam::aws:policy/AmazonS3FullAccess"
 }
 
 # S3 Bucket backed by Storage Gateway
-module "s3_bucket" {
+module "smb_share_bucket" {
   source        = "./modules/aws/s3"
   bucket_name   = var.s3_bucket_name
   objects       = []
@@ -681,7 +658,7 @@ data "external" "activation_key" {
     aws_vpn_connection.vpn_conn_0,
     aws_vpn_connection.vpn_conn_1,
     google_compute_router_peer.bgp_peer,
-    aws_vpc_endpoint.storagegateway
+    module.storagegateway_vpce
   ]
 }
 
@@ -705,8 +682,8 @@ module "storage_gateway" {
   tags                 = local.common_tags
   smb_shares = [
     {
-      location_arn            = module.s3_bucket.arn
-      role_arn                = aws_iam_role.storage_gateway_role.arn
+      location_arn            = module.smb_share_bucket.arn
+      role_arn                = module.storage_gateway_role.arn
       authentication          = var.smb_authentication
       guess_mime_type_enabled = var.smb_guess_mime_type
       read_only               = var.smb_read_only
@@ -719,7 +696,7 @@ module "storage_gateway" {
   ]
 
   depends_on = [
-    aws_vpc_endpoint.storagegateway,
-    aws_vpc_endpoint.s3
+    module.storagegateway_vpce,
+    module.s3_vpce
   ]
 }

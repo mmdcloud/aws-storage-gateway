@@ -26,7 +26,7 @@ output "gateway_arn" {
 
 output "storagegateway_vpc_endpoint_id" {
   description = "ID of the AWS Storage Gateway Interface VPC Endpoint"
-  value       = aws_vpc_endpoint.storagegateway.id
+  value       = module.storagegateway_vpce.id
 }
 
 output "storagegateway_vpc_endpoint_dns" {
@@ -36,7 +36,7 @@ output "storagegateway_vpc_endpoint_dns" {
 
 output "s3_vpc_endpoint_id" {
   description = "ID of the Amazon S3 Gateway VPC Endpoint"
-  value       = aws_vpc_endpoint.s3.id
+  value       = module.s3_vpce.id
 }
 
 # --- Amazon S3 Target Bucket ---
