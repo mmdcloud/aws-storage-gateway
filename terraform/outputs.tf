@@ -43,12 +43,12 @@ output "s3_vpc_endpoint_id" {
 
 output "s3_bucket_name" {
   description = "Target Amazon S3 bucket backing the Storage Gateway SMB share"
-  value       = module.s3_bucket.bucket
+  value       = module.smb_share_bucket.bucket
 }
 
 output "s3_bucket_arn" {
   description = "ARN of the Amazon S3 bucket backing the Storage Gateway SMB share"
-  value       = module.s3_bucket.arn
+  value       = module.smb_share_bucket.arn
 }
 
 # --- SMB File Share & Mounting ---
@@ -60,7 +60,7 @@ output "smb_share_arns" {
 
 output "smb_mount_command" {
   description = "Production mount command to execute on the on-premise client to mount SMB share with SMB 3.0 encryption"
-  value       = "sudo /home/admin/mount-aws-storage-gateway.sh ${module.gateway_instance.private_ip} ${module.s3_bucket.bucket} ${var.smb_guest_password}"
+  value       = "sudo /home/admin/mount-aws-storage-gateway.sh ${module.gateway_instance.private_ip} ${module.smb_share_bucket.bucket} ${var.smb_guest_password}"
   sensitive   = true
 }
 

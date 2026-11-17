@@ -459,12 +459,9 @@ data "aws_ssm_parameter" "storage_gateway_ami" {
 
 # IAM Role & Instance Profile for EC2 Gateway Host
 module "gateway_instance_role" {
-  source             = "./modules/aws/iam"
-  role_name          = var.gateway_instance_role_name
-  role_description   = ""
-  policy_name        = ""
-  policy_description = ""
-  policy             = ""
+  source           = "./modules/aws/iam"
+  role_name        = var.gateway_instance_role_name
+  role_description = "IAM role for gateway instance"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -551,10 +548,7 @@ resource "aws_volume_attachment" "gateway_cache_attachment" {
 module "storage_gateway_role" {
   source           = "./modules/aws/iam"
   role_name        = var.storage_gateway_role_name
-  role_description = ""
-  policy_name = ""
-  policy_description = ""
-  policy = ""
+  role_description = "IAM role for storage gateway"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
