@@ -59,9 +59,24 @@ output "smb_share_arns" {
 }
 
 output "smb_mount_command" {
-  description = "Production mount command to execute on the on-premise client to mount SMB share with SMB 3.0 encryption"
-  value       = "sudo /home/admin/mount-aws-storage-gateway.sh ${module.gateway_instance.private_ip} ${module.smb_share_bucket.bucket} ${var.smb_guest_password}"
+  description = "Production mount command to execute on the on-premise client to mount SMB share with SMB 3.0 encryption via private DNS"
+  value       = "sudo /home/admin/mount-aws-storage-gateway.sh storagegw.corp.internal ${module.smb_share_bucket.bucket} ${var.smb_guest_password}"
   sensitive   = true
+}
+
+output "smb_credentials_secret_arn" {
+  description = "ARN of the AWS Secrets Manager secret storing SMB guest credentials"
+  value       = aws_secretsmanager_secret.smb_credentials.arn
+}
+
+output "route53_inbound_resolver_ips" {
+  description = "Private IP addresses of the AWS Route 53 Inbound Resolver endpoints (forwarded to from GCP Cloud DNS)"
+  value       = var.enable_cross_cloud_dns && length(aws_route53_resolver_endpoint.inbound) > 0 ? [for ip in aws_route53_resolver_endpoint.inbound[0].ip_address : ip.ip] : []
+}
+
+output "cloudwatch_audit_log_group" {
+  description = "CloudWatch log group ARN for Storage Gateway SMB file share audit logs"
+  value       = var.enable_smb_audit_logging && length(aws_cloudwatch_log_group.sgw_smb_audit) > 0 ? aws_cloudwatch_log_group.sgw_smb_audit[0].arn : null
 }
 
 # --- GCP Simulated On-Premise Client ---

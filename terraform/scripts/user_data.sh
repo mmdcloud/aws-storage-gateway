@@ -35,20 +35,20 @@ systemctl enable smbd
 # Create a helper script to easily mount AWS Storage Gateway SMB share from this VM
 cat > /home/admin/mount-aws-storage-gateway.sh << 'EOF'
 #!/bin/bash
-# Usage: sudo ./mount-aws-storage-gateway.sh <GATEWAY_IP> <SHARE_NAME> [PASSWORD]
-GATEWAY_IP=$1
+# Usage: sudo ./mount-aws-storage-gateway.sh <GATEWAY_HOST_OR_IP> <SHARE_NAME> [PASSWORD]
+GATEWAY_HOST=$1
 SHARE_NAME=$2
 PASSWORD=${3:-GuestPass123!}
 MOUNT_POINT=/mnt/aws-storage-gateway
 
-if [ -z "$GATEWAY_IP" ] || [ -z "$SHARE_NAME" ]; then
-    echo "Usage: sudo $0 <GATEWAY_IP> <SHARE_NAME> [PASSWORD]"
+if [ -z "$GATEWAY_HOST" ] || [ -z "$SHARE_NAME" ]; then
+    echo "Usage: sudo $0 <GATEWAY_HOST_OR_IP> <SHARE_NAME> [PASSWORD]"
     exit 1
 fi
 
 mkdir -p "$MOUNT_POINT"
 # AWS Storage Gateway guest account is 'smbguest' and requires 'seal' for MandatoryEncryption
-mount -t cifs "//$GATEWAY_IP/$SHARE_NAME" "$MOUNT_POINT" -o username=smbguest,password="$PASSWORD",vers=3.0,seal
+mount -t cifs "//$GATEWAY_HOST/$SHARE_NAME" "$MOUNT_POINT" -o username=smbguest,password="$PASSWORD",vers=3.0,seal
 
 if [ $? -eq 0 ]; then
     echo "Successfully mounted AWS Storage Gateway SMB share at $MOUNT_POINT"

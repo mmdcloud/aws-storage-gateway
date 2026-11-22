@@ -124,8 +124,8 @@ variable "gcp_vm_deletion_protection" {
 
 variable "gcp_allowed_ssh_cidrs" {
   type        = list(string)
-  description = "Allowed CIDR ranges for administrative SSH ingress to the GCP VM"
-  default     = ["0.0.0.0/0"]
+  description = "Allowed CIDR ranges for administrative SSH ingress to the GCP VM (defaults to Google Identity-Aware Proxy CIDR for zero-exposure SSH)"
+  default     = ["35.235.240.0/20"]
 }
 
 # =============================================================================
@@ -483,4 +483,26 @@ variable "smb_invalid_users" {
   type        = list(string)
   description = "List of users explicitly denied access to the SMB share"
   default     = []
+}
+
+# =============================================================================
+# Section 8: Enterprise Security, Governance & Day-2 Operations
+# =============================================================================
+
+variable "enable_cross_cloud_dns" {
+  type        = bool
+  description = "Deploy AWS Route 53 Inbound Resolver and GCP Cloud DNS forwarding zone for cross-cloud private DNS resolution"
+  default     = true
+}
+
+variable "enable_automated_cache_refresh" {
+  type        = bool
+  description = "Enable automated EventBridge and Lambda pipeline to refresh Storage Gateway cache on out-of-band S3 object creation"
+  default     = true
+}
+
+variable "enable_smb_audit_logging" {
+  type        = bool
+  description = "Enable CloudWatch log group and auditing on the Storage Gateway SMB file share"
+  default     = true
 }

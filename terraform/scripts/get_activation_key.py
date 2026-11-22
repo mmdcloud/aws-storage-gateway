@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import sys
+import os
 import json
 import subprocess
 import time
@@ -40,6 +41,13 @@ def main():
     zone = d.get("zone", "us-central1-a")
     project = d.get("project", "")
     gateway_name = d.get("gateway_name", "gcp-vm-file-gateway")
+
+    # 0. CI/CD Environment Variable Override
+    env_key = os.environ.get("STORAGE_GATEWAY_ACTIVATION_KEY")
+    if env_key:
+        log(f"Using activation key supplied via STORAGE_GATEWAY_ACTIVATION_KEY environment variable.")
+        print(json.dumps({"activation_key": env_key.strip()}))
+        return
 
     # 1. Fast-path: Check if the gateway is already active in AWS Storage Gateway
     # If the gateway is already active, port 80 will no longer serve an activation key.

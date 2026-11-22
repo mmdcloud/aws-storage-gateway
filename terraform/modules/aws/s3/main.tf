@@ -47,9 +47,11 @@ resource "aws_s3_bucket_policy" "bucket_policy" {
   policy = var.bucket_policy
 }
 
-# Specifying bucket notification configuration
+# Specifying bucket notification configuration (with EventBridge support)
 resource "aws_s3_bucket_notification" "bucket_notification" {
-  bucket = aws_s3_bucket.bucket.bucket
+  bucket      = aws_s3_bucket.bucket.bucket
+  eventbridge = var.enable_eventbridge
+
   dynamic "queue" {
     for_each = var.bucket_notification.queue
     content {
@@ -74,58 +76,36 @@ resource "aws_s3_bucket_public_access_block" "block" {
   restrict_public_buckets = true
 }
 
-# resource "aws_s3_bucket_lifecycle_configuration" "lifecyle_policy" {
-#   bucket = aws_s3_bucket.bucket.id
-#   count  = length(var.lifecycle_policies) > 0 ? 1 : 0    
-#   dynamic "rule" {
-#     for_each = var.lifecycle_policies[count.index].rules
-#     content {
-#       id     = rule.value.id
-#       status = rule.value.status
+# Bucket Server-Side Encryption Configuration (SSE-S3 / AES256 or KMS)
+resource "aws_s3_bucket_server_side_encryption_configuration" "encryption" {
+  bucket = aws_s3_bucket.bucket.id
 
-#       dynamic "filter" {
-#         for_each = rule.value.filter != null ? [rule.value.filter] : []
-#         content {
-#           prefix = filter.value.prefix
-#         }
-#       }
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm     = var.kms_key_arn != null ? "aws:kms" : "AES256"
+      kms_master_key_id = var.kms_key_arn
+    }
+    bucket_key_enabled = true
+  }
+}
 
-#       dynamic "transition" {
-#         for_each = rule.value.transition != null ? [rule.value.transition] : []
-#         content {
-#           days          = transition.value.days
-#           storage_class = transition.value.storage_class
-#         }
-#       }
+# Bucket Lifecycle Configuration for Multipart Cleanup and Version Management
+resource "aws_s3_bucket_lifecycle_configuration" "lifecycle" {
+  count  = var.enable_lifecycle_rules ? 1 : 0
+  bucket = aws_s3_bucket.bucket.id
 
-#       dynamic "noncurrent_version_transition" {
-#         for_each = rule.value.noncurrent_version_transition != null ? [rule.value.noncurrent_version_transition] : []
-#         content {
-#           noncurrent_days          = noncurrent_version_transition.value.days
-#           storage_class = noncurrent_version_transition.value.storage_class
-#         }
-#       }
+  rule {
+    id     = "abort-incomplete-multipart-and-expire-old-versions"
+    status = "Enabled"
 
-#       dynamic "expiration" {
-#         for_each = rule.value.expiration != null ? [rule.value.expiration] : []
-#         content {
-#           days = expiration.value.days
-#         }
-#       }
+    filter {}
 
-#       dynamic "noncurrent_version_expiration" {
-#         for_each = rule.value.noncurrent_version_expiration != null ? [rule.value.noncurrent_version_expiration] : []
-#         content {
-#           noncurrent_days = noncurrent_version_expiration.value.days
-#         }
-#       }
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
 
-#       dynamic "abort_incomplete_multipart_upload" {
-#         for_each = rule.value.abort_incomplete_multipart_upload != null ? [rule.value.abort_incomplete_multipart_upload] : []
-#         content {
-#           days_after_initiation = abort_incomplete_multipart_upload.value.days_after_initiation
-#         }
-#       }
-#     }
-#   }
-# }
+    noncurrent_version_expiration {
+      noncurrent_days = var.noncurrent_version_expiration_days
+    }
+  }
+}

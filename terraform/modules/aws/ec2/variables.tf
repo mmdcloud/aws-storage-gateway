@@ -58,3 +58,21 @@ variable "tags" {
   description = "Tags to attach to the instance"
   default     = {}
 }
+
+variable "monitoring" {
+  type        = bool
+  description = "Enable detailed CloudWatch monitoring"
+  default     = true
+}
+
+variable "root_volume_type" {
+  type        = string
+  description = "Volume type for root block device"
+  default     = "gp3"
+}
+
+variable "root_volume_size" {
+  type        = number
+  description = "Volume size in GiB for root block device (defaults to AMI default if null)"
+  default     = null
+}

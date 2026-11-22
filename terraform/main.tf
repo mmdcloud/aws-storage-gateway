@@ -310,6 +310,11 @@ module "vpc" {
   )
 }
 
+# AWS Managed Prefix List for Amazon S3 Gateway Endpoint
+data "aws_prefix_list" "s3" {
+  name = "com.amazonaws.${var.aws_region}.s3"
+}
+
 # Security Group for Storage Gateway Interface VPC Endpoint
 module "storagegateway_vpce_sg" {
   source      = "./modules/aws/vpc/security_groups"
@@ -351,8 +356,8 @@ module "storagegateway_vpce_sg" {
       from_port   = 0
       to_port     = 0
       protocol    = "-1"
-      cidr_blocks = ["0.0.0.0/0"]
-      description = "Allow all outbound traffic"
+      cidr_blocks = [var.aws_vpc_cidr]
+      description = "Allow outbound strictly within the VPC"
     }
   ]
 }
@@ -444,10 +449,18 @@ module "gateway_sg" {
   ]
   egress = [
     {
+      from_port       = 443
+      to_port         = 443
+      protocol        = "tcp"
+      prefix_list_ids = [data.aws_prefix_list.s3.id]
+      description     = "HTTPS egress to Amazon S3 Gateway Endpoint"
+    },
+    {
       from_port   = 0
       to_port     = 0
       protocol    = "-1"
-      cidr_blocks = ["0.0.0.0/0"]
+      cidr_blocks = concat([var.aws_vpc_cidr], var.source_vpc_ip_cidr_range)
+      description = "Internal egress to VPC endpoints, gateway services, and on-premise GCP network"
     }
   ]
 }
@@ -517,6 +530,87 @@ resource "aws_route53_record" "storage_gateway" {
   type    = "A"
   ttl     = 300
   records = [module.gateway_instance.private_ip]
+}
+
+# Security Group for AWS Route 53 Inbound Resolver Endpoint
+module "route53_resolver_sg" {
+  count       = var.enable_cross_cloud_dns ? 1 : 0
+  source      = "./modules/aws/vpc/security_groups"
+  vpc_id      = module.vpc.vpc_id
+  name        = "${local.name_prefix}-r53-resolver-sg"
+  description = "Security group for Route 53 Inbound Resolver endpoint"
+  tags        = local.common_tags
+  ingress = [
+    {
+      from_port       = 53
+      to_port         = 53
+      protocol        = "udp"
+      self            = "false"
+      cidr_blocks     = var.source_vpc_ip_cidr_range
+      security_groups = []
+      description     = "Inbound DNS UDP queries from GCP simulated on-premise network"
+    },
+    {
+      from_port       = 53
+      to_port         = 53
+      protocol        = "tcp"
+      self            = "false"
+      cidr_blocks     = var.source_vpc_ip_cidr_range
+      security_groups = []
+      description     = "Inbound DNS TCP queries from GCP simulated on-premise network"
+    }
+  ]
+  egress = [
+    {
+      from_port   = 0
+      to_port     = 0
+      protocol    = "-1"
+      cidr_blocks = [var.aws_vpc_cidr]
+      description = "Allow DNS resolver outbound within the VPC"
+    }
+  ]
+}
+
+# AWS Route 53 Inbound Resolver Endpoint (High Availability across 2 Private Subnets)
+resource "aws_route53_resolver_endpoint" "inbound" {
+  count              = var.enable_cross_cloud_dns ? 1 : 0
+  name               = "${local.name_prefix}-inbound-resolver"
+  direction          = "INBOUND"
+  security_group_ids = [module.route53_resolver_sg[0].id]
+
+  ip_address {
+    subnet_id = module.vpc.private_subnets[0]
+  }
+
+  ip_address {
+    subnet_id = module.vpc.private_subnets[1]
+  }
+
+  tags = local.common_tags
+}
+
+# GCP Cloud DNS Forwarding Zone for corp.internal (forwards queries to AWS Route 53 Inbound Resolver)
+resource "google_dns_managed_zone" "corp_internal_forwarding" {
+  count       = var.enable_cross_cloud_dns ? 1 : 0
+  name        = "corp-internal-forwarding"
+  dns_name    = "corp.internal."
+  description = "Private DNS forwarding zone for corp.internal across HA VPN to AWS Route 53 Inbound Resolver"
+  visibility  = "private"
+
+  private_visibility_config {
+    networks {
+      network_url = module.gcp_vpc.vpc_id
+    }
+  }
+
+  forwarding_config {
+    dynamic "target_name_servers" {
+      for_each = [for ip in aws_route53_resolver_endpoint.inbound[0].ip_address : ip.ip]
+      content {
+        ipv4_address = target_name_servers.value
+      }
+    }
+  }
 }
 
 # EBS Volume for Storage Gateway Local Cache (Min 150 GiB required by AWS)
@@ -612,17 +706,40 @@ resource "aws_iam_role_policy_attachment" "storage_gateway_policy" {
   policy_arn = var.enable_least_privilege_iam ? aws_iam_policy.storage_gateway_s3_policy[0].arn : "arn:aws:iam::aws:policy/AmazonS3FullAccess"
 }
 
+# Enforce TLS/HTTPS only on the S3 bucket to prevent unencrypted in-transit data exposure
+data "aws_iam_policy_document" "s3_tls_enforce" {
+  statement {
+    sid    = "EnforceTLSRequestsOnly"
+    effect = "Deny"
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    actions = ["s3:*"]
+    resources = [
+      "arn:aws:s3:::${var.s3_bucket_name}",
+      "arn:aws:s3:::${var.s3_bucket_name}/*"
+    ]
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
 # S3 Bucket backed by Storage Gateway
 module "smb_share_bucket" {
-  source        = "./modules/aws/s3"
-  bucket_name   = var.s3_bucket_name
-  objects       = []
-  bucket_policy = ""
+  source             = "./modules/aws/s3"
+  bucket_name        = var.s3_bucket_name
+  objects            = []
+  bucket_policy      = data.aws_iam_policy_document.s3_tls_enforce.json
+  enable_eventbridge = var.enable_automated_cache_refresh
   cors = [
     {
       allowed_headers = ["*"]
       allowed_methods = ["GET"]
-      allowed_origins = ["*"]
+      allowed_origins = [var.aws_vpc_cidr]
       max_age_seconds = 3000
     }
   ]
@@ -686,6 +803,7 @@ module "storage_gateway" {
       admin_user_list         = length(var.smb_admin_users) > 0 ? var.smb_admin_users : null
       valid_user_list         = length(var.smb_valid_users) > 0 ? var.smb_valid_users : null
       invalid_user_list       = length(var.smb_invalid_users) > 0 ? var.smb_invalid_users : null
+      audit_destination_arn   = var.enable_smb_audit_logging && length(aws_cloudwatch_log_group.sgw_smb_audit) > 0 ? aws_cloudwatch_log_group.sgw_smb_audit[0].arn : null
     }
   ]
 
@@ -693,4 +811,185 @@ module "storage_gateway" {
     module.storagegateway_vpce,
     module.s3_vpce
   ]
+}
+
+# =============================================================================
+# Secrets Management: AWS Secrets Manager for SMB Credentials
+# =============================================================================
+resource "aws_secretsmanager_secret" "smb_credentials" {
+  name                    = "${local.name_prefix}-smb-credentials"
+  description             = "Secure storage for Storage Gateway SMB guest access credentials"
+  recovery_window_in_days = 0
+  tags                    = local.common_tags
+}
+
+resource "aws_secretsmanager_secret_version" "smb_credentials" {
+  secret_id = aws_secretsmanager_secret.smb_credentials.id
+  secret_string = jsonencode({
+    username = "smbguest"
+    password = var.smb_guest_password
+  })
+}
+
+# =============================================================================
+# Day-2 Operations: CloudWatch Audit Logging & Performance Alarms
+# =============================================================================
+# CloudWatch Log Group for Storage Gateway SMB File Share Auditing
+resource "aws_cloudwatch_log_group" "sgw_smb_audit" {
+  count             = var.enable_smb_audit_logging ? 1 : 0
+  name              = "/aws/storagegateway/${var.gateway_name}/smb-audit"
+  retention_in_days = 90
+  tags              = local.common_tags
+}
+
+# CloudWatch Alarm: High Cache Dirty Percentage (> 80%)
+resource "aws_cloudwatch_metric_alarm" "sgw_cache_dirty" {
+  alarm_name          = "${var.gateway_name}-high-cache-dirty-percent"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "CachePercentDirty"
+  namespace           = "AWS/StorageGateway"
+  period              = 300
+  statistic           = "Average"
+  threshold           = 80
+  alarm_description   = "Storage Gateway cache percent dirty exceeds 80%, indicating write buffer saturation or S3 sync backpressure"
+  dimensions = {
+    GatewayId = module.storage_gateway.id
+  }
+  tags = local.common_tags
+}
+
+# CloudWatch Alarm: Low Cache Hit Percentage (< 50%)
+resource "aws_cloudwatch_metric_alarm" "sgw_cache_hit" {
+  alarm_name          = "${var.gateway_name}-low-cache-hit-percent"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = 3
+  metric_name         = "CacheHitPercent"
+  namespace           = "AWS/StorageGateway"
+  period              = 300
+  statistic           = "Average"
+  threshold           = 50
+  alarm_description   = "Storage Gateway cache hit percentage dropped below 50%, indicating frequent S3 roundtrips and cache undersizing"
+  dimensions = {
+    GatewayId = module.storage_gateway.id
+  }
+  tags = local.common_tags
+}
+
+# =============================================================================
+# Automated Out-of-Band S3 Cache Refresh Pipeline (EventBridge + Lambda)
+# =============================================================================
+# IAM Role for Cache Refresh Lambda
+resource "aws_iam_role" "cache_refresh_lambda" {
+  count       = var.enable_automated_cache_refresh ? 1 : 0
+  name        = "${local.name_prefix}-cache-refresh-lambda-role"
+  description = "IAM role for Lambda function refreshing Storage Gateway cache on S3 changes"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = local.common_tags
+}
+
+resource "aws_iam_policy" "cache_refresh_lambda_policy" {
+  count       = var.enable_automated_cache_refresh ? 1 : 0
+  name        = "${local.name_prefix}-cache-refresh-lambda-policy"
+  description = "Allows Lambda to call RefreshCache on Storage Gateway and emit CloudWatch logs"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:*:*:*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "storagegateway:RefreshCache"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+
+  tags = local.common_tags
+}
+
+resource "aws_iam_role_policy_attachment" "cache_refresh_lambda_attach" {
+  count      = var.enable_automated_cache_refresh ? 1 : 0
+  role       = aws_iam_role.cache_refresh_lambda[0].name
+  policy_arn = aws_iam_policy.cache_refresh_lambda_policy[0].arn
+}
+
+data "aws_caller_identity" "current" {}
+
+locals {
+  cache_refresh_rule_name = "${local.name_prefix}-s3-cache-refresh-rule"
+  cache_refresh_rule_arn  = "arn:aws:events:${var.aws_region}:${data.aws_caller_identity.current.account_id}:rule/${local.cache_refresh_rule_name}"
+}
+
+# Lambda Module for Storage Gateway S3 Cache Refresh
+module "cache_refresh_lambda" {
+  count            = var.enable_automated_cache_refresh ? 1 : 0
+  source           = "./modules/aws/lambda"
+  function_name    = "${local.name_prefix}-s3-cache-refresh"
+  role_arn         = aws_iam_role.cache_refresh_lambda[0].arn
+  handler          = "index.handler"
+  runtime          = "python3.11"
+  timeout          = 30
+  filename         = "${path.module}/scripts/cache_refresh.zip"
+  source_code_hash = filebase64sha256("${path.module}/scripts/cache_refresh.zip")
+
+  env_variables = {
+    FILE_SHARE_ARN = length(module.storage_gateway.smb_share_arns) > 0 ? module.storage_gateway.smb_share_arns[0] : ""
+  }
+
+  permissions = [
+    {
+      statement_id = "AllowExecutionFromEventBridge"
+      action       = "lambda:InvokeFunction"
+      principal    = "events.amazonaws.com"
+      source_arn   = local.cache_refresh_rule_arn
+    }
+  ]
+
+  tags = local.common_tags
+}
+
+# EventBridge Module to trigger Cache Refresh Lambda on S3 updates
+module "cache_refresh_eventbridge" {
+  count            = var.enable_automated_cache_refresh ? 1 : 0
+  source           = "./modules/aws/eventbridge"
+  rule_name        = local.cache_refresh_rule_name
+  rule_description = "Triggers Storage Gateway cache refresh Lambda on S3 bucket updates"
+  target_id        = "RefreshStorageGatewayCache"
+  target_arn       = module.cache_refresh_lambda[0].arn
+
+  event_pattern = jsonencode({
+    source      = ["aws.s3"]
+    detail-type = ["Object Created", "Object Deleted"]
+    detail = {
+      bucket = {
+        name = [var.s3_bucket_name]
+      }
+    }
+  })
+
+  tags = local.common_tags
 }

@@ -71,6 +71,7 @@ resource "aws_storagegateway_smb_file_share" "smb_share" {
   case_sensitivity        = lookup(var.smb_shares[count.index], "case_sensitivity", null)
   admin_user_list         = lookup(var.smb_shares[count.index], "admin_user_list", null)
   invalid_user_list       = lookup(var.smb_shares[count.index], "invalid_user_list", null)
+  audit_destination_arn   = lookup(var.smb_shares[count.index], "audit_destination_arn", null)
   tags                    = lookup(var.smb_shares[count.index], "tags", var.tags)
 
   depends_on = [aws_storagegateway_cache.file_gateway_cache]
