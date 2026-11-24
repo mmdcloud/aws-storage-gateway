@@ -66,7 +66,7 @@ output "smb_mount_command" {
 
 output "smb_credentials_secret_arn" {
   description = "ARN of the AWS Secrets Manager secret storing SMB guest credentials"
-  value       = aws_secretsmanager_secret.smb_credentials.arn
+  value       = module.smb_credentials_secret.arn
 }
 
 output "route53_inbound_resolver_ips" {

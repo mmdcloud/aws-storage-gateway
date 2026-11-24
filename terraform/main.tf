@@ -97,6 +97,11 @@ resource "google_compute_router" "router" {
     asn               = var.gcp_bgp_asn
     advertise_mode    = "CUSTOM"
     advertised_groups = ["ALL_SUBNETS"]
+
+    advertised_ip_ranges {
+      range       = "35.199.192.0/19"
+      description = "Google Cloud DNS outbound forwarding range"
+    }
   }
 }
 
@@ -546,18 +551,18 @@ module "route53_resolver_sg" {
       to_port         = 53
       protocol        = "udp"
       self            = "false"
-      cidr_blocks     = var.source_vpc_ip_cidr_range
+      cidr_blocks     = concat(var.source_vpc_ip_cidr_range, ["35.199.192.0/19"])
       security_groups = []
-      description     = "Inbound DNS UDP queries from GCP simulated on-premise network"
+      description     = "Inbound DNS UDP queries from GCP simulated on-premise network and Cloud DNS proxy"
     },
     {
       from_port       = 53
       to_port         = 53
       protocol        = "tcp"
       self            = "false"
-      cidr_blocks     = var.source_vpc_ip_cidr_range
+      cidr_blocks     = concat(var.source_vpc_ip_cidr_range, ["35.199.192.0/19"])
       security_groups = []
-      description     = "Inbound DNS TCP queries from GCP simulated on-premise network"
+      description     = "Inbound DNS TCP queries from GCP simulated on-premise network and Cloud DNS proxy"
     }
   ]
   egress = [
@@ -565,8 +570,8 @@ module "route53_resolver_sg" {
       from_port   = 0
       to_port     = 0
       protocol    = "-1"
-      cidr_blocks = [var.aws_vpc_cidr]
-      description = "Allow DNS resolver outbound within the VPC"
+      cidr_blocks = concat([var.aws_vpc_cidr], var.source_vpc_ip_cidr_range, ["35.199.192.0/19"])
+      description = "Allow DNS resolver outbound within the VPC and back to GCP Cloud DNS"
     }
   ]
 }
@@ -607,7 +612,8 @@ resource "google_dns_managed_zone" "corp_internal_forwarding" {
     dynamic "target_name_servers" {
       for_each = [for ip in aws_route53_resolver_endpoint.inbound[0].ip_address : ip.ip]
       content {
-        ipv4_address = target_name_servers.value
+        ipv4_address    = target_name_servers.value
+        forwarding_path = "private"
       }
     }
   }
@@ -816,19 +822,16 @@ module "storage_gateway" {
 # =============================================================================
 # Secrets Management: AWS Secrets Manager for SMB Credentials
 # =============================================================================
-resource "aws_secretsmanager_secret" "smb_credentials" {
+module "smb_credentials_secret" {
+  source                  = "./modules/aws/secrets-manager"
   name                    = "${local.name_prefix}-smb-credentials"
   description             = "Secure storage for Storage Gateway SMB guest access credentials"
   recovery_window_in_days = 0
-  tags                    = local.common_tags
-}
-
-resource "aws_secretsmanager_secret_version" "smb_credentials" {
-  secret_id = aws_secretsmanager_secret.smb_credentials.id
   secret_string = jsonencode({
     username = "smbguest"
     password = var.smb_guest_password
   })
+  tags = local.common_tags
 }
 
 # =============================================================================
@@ -879,12 +882,14 @@ resource "aws_cloudwatch_metric_alarm" "sgw_cache_hit" {
 # =============================================================================
 # Automated Out-of-Band S3 Cache Refresh Pipeline (EventBridge + Lambda)
 # =============================================================================
-# IAM Role for Cache Refresh Lambda
-resource "aws_iam_role" "cache_refresh_lambda" {
-  count       = var.enable_automated_cache_refresh ? 1 : 0
-  name        = "${local.name_prefix}-cache-refresh-lambda-role"
-  description = "IAM role for Lambda function refreshing Storage Gateway cache on S3 changes"
-
+# IAM Role & Policy Module for Cache Refresh Lambda
+module "cache_refresh_lambda_role" {
+  count              = var.enable_automated_cache_refresh ? 1 : 0
+  source             = "./modules/aws/iam"
+  role_name          = "${local.name_prefix}-cache-refresh-lambda-role"
+  role_description   = "IAM role for Lambda function refreshing Storage Gateway cache on S3 changes"
+  policy_name        = "${local.name_prefix}-cache-refresh-lambda-policy"
+  policy_description = "Allows Lambda to call RefreshCache on Storage Gateway and emit CloudWatch logs"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -897,15 +902,6 @@ resource "aws_iam_role" "cache_refresh_lambda" {
       }
     ]
   })
-
-  tags = local.common_tags
-}
-
-resource "aws_iam_policy" "cache_refresh_lambda_policy" {
-  count       = var.enable_automated_cache_refresh ? 1 : 0
-  name        = "${local.name_prefix}-cache-refresh-lambda-policy"
-  description = "Allows Lambda to call RefreshCache on Storage Gateway and emit CloudWatch logs"
-
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -927,14 +923,7 @@ resource "aws_iam_policy" "cache_refresh_lambda_policy" {
       }
     ]
   })
-
   tags = local.common_tags
-}
-
-resource "aws_iam_role_policy_attachment" "cache_refresh_lambda_attach" {
-  count      = var.enable_automated_cache_refresh ? 1 : 0
-  role       = aws_iam_role.cache_refresh_lambda[0].name
-  policy_arn = aws_iam_policy.cache_refresh_lambda_policy[0].arn
 }
 
 data "aws_caller_identity" "current" {}
@@ -949,7 +938,7 @@ module "cache_refresh_lambda" {
   count            = var.enable_automated_cache_refresh ? 1 : 0
   source           = "./modules/aws/lambda"
   function_name    = "${local.name_prefix}-s3-cache-refresh"
-  role_arn         = aws_iam_role.cache_refresh_lambda[0].arn
+  role_arn         = module.cache_refresh_lambda_role[0].arn
   handler          = "index.handler"
   runtime          = "python3.11"
   timeout          = 30
